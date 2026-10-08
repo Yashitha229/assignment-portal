@@ -1,343 +1,451 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import './App.css';
 
-const KEY = "assignment-portal-v1";
-const SEED = {
-  assignments: [
-    { id: 1, course: "Web Development", title: "Build a personal portfolio", desc: "Create a responsive portfolio with HTML, CSS and JavaScript. Upload a .zip of your project.", due: new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 16), max: 100 },
-    { id: 2, course: "Databases", title: "ER diagram for a library system", desc: "Submit an ER diagram as PDF or image.", due: new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 16), max: 50 },
-    { id: 3, course: "Algorithms", title: "Sorting analysis report", desc: "Compare merge sort and quicksort with timing results.", due: new Date(Date.now() - 864e5).toISOString().slice(0, 16), max: 100 }
-  ],
-  submissions: []
-};
+function App() {
+  const [role, setRole] = useState('student'); // 'student' or 'teacher'
+  
+  // Available Subjects
+  const subjects = ['All Subjects', 'Web Development', 'React Programming', 'Database Systems'];
+  const [selectedSubject, setSelectedSubject] = useState('All Subjects');
 
-export default function App() {
-  const [state, setState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(KEY);
-      return saved ? JSON.parse(saved) : SEED;
-    } catch (e) {
-      return SEED;
-    }
-  });
+  // Initial Assignments List categorized by Subject
+  const [assignments, setAssignments] = useState([
+    { id: 'HW-101', subject: 'Web Development', title: 'HW-101: Web Development Basics', dueDate: '2026-10-15' },
+    { id: 'HW-102', subject: 'React Programming', title: 'HW-102: React Components & Hooks', dueDate: '2026-10-20' },
+    { id: 'HW-103', subject: 'Database Systems', title: 'HW-103: Database Integration', dueDate: '2026-10-25' }
+  ]);
+  
+  // Selected assignment for student submission
+  const [selectedAssignment, setSelectedAssignment] = useState(null);
 
-  const [role, setRole] = useState('student');
-  const [view, setView] = useState({ name: 'list', id: null });
-  const [pendingFile, setPendingFile] = useState(null);
-  const [noteText, setNoteText] = useState('');
-  const [toastMsg, setToastMsg] = useState('');
-
-  // Form inputs for Teacher assignment creation
-  const [newCourse, setNewCourse] = useState('');
+  // New Assignment Form State (Teacher View)
   const [newTitle, setNewTitle] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newDue, setNewDue] = useState('');
-  const [newMax, setNewMax] = useState(100);
+  const [newSubject, setNewSubject] = useState('Web Development');
+  const [newDueDate, setNewDueDate] = useState('');
 
-  // Temporary state for teacher feedback/grading
-  const [grades, setGrades] = useState({});
-  const [feedbacks, setFeedbacks] = useState({});
+  // Student Form State
+  const [studentName, setStudentName] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
+  // Submissions State
+  const [submissions, setSubmissions] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Toast Notification State
+  const [toastMessage, setToastMessage] = useState('');
+  const [showToast, setShowToast] = useState(false);
+
+  const triggerToast = (msg) => {
+    setToastMessage(msg);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  // Fetch submissions from Supabase on mount and role switch
   useEffect(() => {
+    fetchSubmissions();
+  }, [role]);
+
+  const fetchSubmissions = async () => {
+    setIsLoading(true);
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch (e) {}
-  }, [state]);
+      const { data, error } = await supabase
+        .from('submissions')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 2200);
-  };
-
-  const fmt = (d) => new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  const size = (b) => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
-  const mine = (aid) => state.submissions.find(s => s.aid === aid);
-
-  const getStatus = (a) => {
-    const s = mine(a.id);
-    const late = new Date(a.due) < new Date();
-    if (s && s.grade != null) return ['Graded: ' + s.grade + '/' + a.max, 't-ok'];
-    if (s) return ['Submitted', 't-ok'];
-    return late ? ['Overdue', 't-bad'] : ['Not submitted', 't-warn'];
-  };
-
-  const handleFilePick = (file) => {
-    if (!file) return;
-    if (file.size > 10485760) {
-      showToast("File is over 10 MB. Choose a smaller file.");
-      return;
+      if (error) throw error;
+      setSubmissions(data || []);
+    } catch (error) {
+      console.error('Error fetching submissions:', error.message);
+      triggerToast('Failed to load submissions');
+    } finally {
+      setIsLoading(false);
     }
-    setPendingFile(file);
   };
 
-  const handleSubmitWork = (aid) => {
-    if (!pendingFile) {
-      showToast("Choose a file before submitting.");
-      return;
-    }
-    const filteredSubs = state.submissions.filter(s => s.aid !== aid);
-    const newSub = {
-      aid,
-      student: "You",
-      name: pendingFile.name,
-      size: pendingFile.size,
-      note: noteText,
-      at: new Date().toISOString(),
-      grade: null,
-      feedback: ''
-    };
-    setState({ ...state, submissions: [...filteredSubs, newSub] });
-    setPendingFile(null);
-    setNoteText('');
-    showToast("Assignment submitted");
-  };
-
+  // Teacher: Add New Assignment
   const handleCreateAssignment = (e) => {
     e.preventDefault();
-    if (!newCourse || !newTitle || !newDue) return;
-    const newA = {
-      id: Date.now(),
-      course: newCourse,
-      title: newTitle,
-      desc: newDesc,
-      due: newDue,
-      max: Number(newMax) || 100
+    if (!newTitle.trim()) return;
+
+    const newId = `HW-${101 + assignments.length}`;
+    const newAss = {
+      id: newId,
+      subject: newSubject,
+      title: `${newId}: ${newTitle}`,
+      dueDate: newDueDate || 'No Due Date'
     };
-    setState({ ...state, assignments: [...state.assignments, newA] });
-    setNewCourse('');
+
+    setAssignments([...assignments, newAss]);
     setNewTitle('');
-    setNewDesc('');
-    setNewDue('');
-    setNewMax(100);
-    showToast("Assignment created");
+    setNewDueDate('');
+    triggerToast('New assignment published!');
   };
 
-  const handleSaveGrade = (sub, maxMarks) => {
-    const g = grades[sub.aid + '_' + sub.student];
-    const f = feedbacks[sub.aid + '_' + sub.student] ?? sub.feedback ?? '';
-    if (g === undefined || g === "" || Number(g) < 0 || Number(g) > maxMarks) {
-      showToast("Enter a grade between 0 and " + maxMarks);
+  // Student: Submit File to Supabase
+  const handleStudentSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!selectedAssignment) {
+      triggerToast('Please select an assignment first.');
       return;
     }
-    const updatedSubs = state.submissions.map(s => {
-      if (s.aid === sub.aid && s.student === sub.student) {
-        return { ...s, grade: Number(g), feedback: f };
-      }
-      return s;
-    });
-    setState({ ...state, submissions: updatedSubs });
-    showToast("Grade saved");
+    if (!selectedFile) {
+      triggerToast('Please attach a file to upload.');
+      return;
+    }
+    if (!studentName.trim()) {
+      triggerToast('Please enter your name.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const fileExt = selectedFile.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+
+      const { error: storageError } = await supabase.storage
+        .from('assignments')
+        .upload(fileName, selectedFile);
+
+      if (storageError) throw storageError;
+
+      const { data: urlData } = supabase.storage
+        .from('assignments')
+        .getPublicUrl(fileName);
+
+      const { error: dbError } = await supabase
+        .from('submissions')
+        .insert([
+          {
+            student_name: studentName,
+            assignment_id: selectedAssignment.id,
+            file_url: urlData.publicUrl,
+            file_name: selectedFile.name,
+            status: 'Submitted',
+            grade: 'Pending'
+          },
+        ]);
+
+      if (dbError) throw dbError;
+
+      triggerToast('Assignment submitted successfully!');
+      
+      setStudentName('');
+      setSelectedFile(null);
+      setSelectedAssignment(null);
+      fetchSubmissions();
+
+    } catch (error) {
+      console.error('Submission failed:', error.message);
+      triggerToast(`Submission failed: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const activeAssignment = state.assignments.find(a => a.id === view.id);
+  // Teacher: Grade Submission
+  const handleGradeSubmission = async (submissionId, grade) => {
+    try {
+      const { error } = await supabase
+        .from('submissions')
+        .update({ grade: grade, status: 'Graded' })
+        .eq('id', submissionId);
+
+      if (error) throw error;
+      triggerToast(`Grade updated to "${grade}"!`);
+      fetchSubmissions();
+    } catch (error) {
+      triggerToast('Failed to update grade: ' + error.message);
+    }
+  };
+
+  // Helper function to check assignment status for students
+  const getSubmissionForAssignment = (assignmentId) => {
+    return submissions.find(s => s.assignment_id === assignmentId);
+  };
+
+  // Filter assignments by selected subject
+  const filteredAssignments = selectedSubject === 'All Subjects'
+    ? assignments
+    : assignments.filter(a => a.subject === selectedSubject);
 
   return (
     <div>
+      {/* Header with Segmented Switcher */}
       <header>
-        <h1>Assignment Portal</h1>
-        <div className="seg" role="group" aria-label="View as">
+        <h1>📚 Assignment Portal</h1>
+        <div className="seg">
           <button 
             aria-pressed={role === 'student'} 
-            onClick={() => { setRole('student'); setView({ name: 'list', id: null }); }}
+            onClick={() => { setRole('student'); setSelectedAssignment(null); }}
           >
-            Student
+            Student View
           </button>
           <button 
             aria-pressed={role === 'teacher'} 
-            onClick={() => { setRole('teacher'); setView({ name: 'list', id: null }); }}
+            onClick={() => setRole('teacher')}
           >
-            Teacher
+            Teacher View
           </button>
         </div>
       </header>
 
-      <main id="app">
-        {role === 'student' ? (
-          view.name === 'list' ? (
-            <>
-              <h2>Your assignments</h2>
-              <p className="sub">Open an assignment to read the brief and upload your work.</p>
-              <div className="list">
-                {state.assignments.map(a => {
-                  const [statusText, statusClass] = getStatus(a);
-                  return (
-                    <div className="row" key={a.id}>
-                      <div>
-                        <h3>{a.title}</h3>
-                        <div className="meta">{a.course} · Due {fmt(a.due)}</div>
-                      </div>
-                      <div>
-                        <span className={`tag ${statusClass}`}>{statusText}</span>{' '}
-                        <button className="btn ghost" onClick={() => setView({ name: 'detail', id: a.id })}>Open</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <>
-              <button className="back" onClick={() => setView({ name: 'list', id: null })}>Back to assignments</button>
-              <h2>{activeAssignment?.title}</h2>
-              <p className="sub">{activeAssignment?.course} · Due {fmt(activeAssignment?.due)} · {activeAssignment?.max} marks</p>
-              <div className="panel">
-                <p style={{ margin: 0 }}>{activeAssignment?.desc}</p>
-              </div>
-              {(() => {
-                const s = mine(activeAssignment.id);
-                const late = new Date(activeAssignment.due) < new Date();
-                return (
-                  <>
-                    {s && (
-                      <div className="panel">
-                        <strong>Your submission</strong>
-                        <p className="meta">{s.name} ({size(s.size)}) · sent {fmt(s.at)}</p>
-                        {s.grade != null ? (
-                          <>
-                            <p><span className="tag t-ok">{s.grade}/{activeAssignment.max}</span></p>
-                            <p>{s.feedback || "No written feedback."}</p>
-                          </>
-                        ) : (
-                          <p className="meta">Waiting for your teacher to grade it.</p>
-                        )}
-                      </div>
-                    )}
-                    {!late && !(s && s.grade != null) && (
-                      <div className="panel">
-                        <strong>{s ? "Replace your file" : "Upload your work"}</strong>
-                        <div 
-                          className="drop" 
-                          onClick={() => document.getElementById('file-input').click()}
-                        >
-                          {pendingFile ? `${pendingFile.name} (${size(pendingFile.size)})` : "Drop a file here or click to choose one"}
+      <main>
+        {/* Subject Filter Bar */}
+        <div className="panel" style={{ padding: '12px 20px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Filter by Subject:</span>
+            <div className="seg">
+              {subjects.map(sub => (
+                <button
+                  key={sub}
+                  aria-pressed={selectedSubject === sub}
+                  onClick={() => setSelectedSubject(sub)}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* STUDENT VIEW */}
+        {role === 'student' && (
+          <div>
+            {!selectedAssignment ? (
+              /* Step 1: Browse Assignments by Subject with Status Badges */
+              <div>
+                <h2>Available Assignments</h2>
+                <p className="sub">Track submission status and submit coursework per subject.</p>
+                
+                <div className="list">
+                  {filteredAssignments.map((ass) => {
+                    const submission = getSubmissionForAssignment(ass.id);
+                    return (
+                      <div className="row" key={ass.id}>
+                        <div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                            <span className="tag t-muted">{ass.subject}</span>
+                            {submission ? (
+                              submission.status === 'Graded' ? (
+                                <span className="tag t-ok">Graded: {submission.grade}</span>
+                              ) : (
+                                <span className="tag t-warn">Submitted</span>
+                              )
+                            ) : (
+                              <span className="tag t-bad">Not Submitted</span>
+                            )}
+                          </div>
+                          <h3>{ass.title}</h3>
+                          <div className="meta">Due Date: {ass.dueDate}</div>
                         </div>
-                        <input 
-                          type="file" 
-                          id="file-input" 
-                          hidden 
-                          onChange={(e) => handleFilePick(e.target.files[0])} 
-                        />
-                        <label htmlFor="note">Note to teacher (optional)</label>
-                        <textarea 
-                          id="note" 
-                          rows="3" 
-                          value={noteText} 
-                          onChange={(e) => setNoteText(e.target.value)} 
-                        />
-                        <div className="actions">
-                          <button className="btn" onClick={() => handleSubmitWork(activeAssignment.id)}>
-                            {s ? "Resubmit" : "Submit assignment"}
+                        <div>
+                          <button 
+                            className="btn" 
+                            onClick={() => setSelectedAssignment(ass)}
+                          >
+                            {submission ? 'Re-submit Work ➔' : 'Submit Work ➔'}
                           </button>
                         </div>
                       </div>
-                    )}
-                    {late && !s && (
-                      <div className="panel t-bad">The deadline has passed. Contact your teacher to ask for an extension.</div>
-                    )}
-                  </>
-                );
-              })()}
-            </>
-          )
-        ) : (
-          view.name === 'list' ? (
-            <>
-              <h2>Teacher dashboard</h2>
-              <p className="sub">Create assignments and grade what students send in.</p>
-              <div className="panel">
-                <strong>New assignment</strong>
-                <form onSubmit={handleCreateAssignment}>
-                  <div className="grid2">
-                    <div>
-                      <label>Course</label>
-                      <input type="text" value={newCourse} onChange={e => setNewCourse(e.target.value)} required />
-                    </div>
-                    <div>
-                      <label>Title</label>
-                      <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} required />
-                    </div>
-                  </div>
-                  <label>Instructions</label>
-                  <textarea rows="3" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
-                  <div className="grid2">
-                    <div>
-                      <label>Deadline</label>
-                      <input type="datetime-local" value={newDue} onChange={e => setNewDue(e.target.value)} required />
-                    </div>
-                    <div>
-                      <label>Total marks</label>
-                      <input type="number" value={newMax} min="1" onChange={e => setNewMax(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="actions">
-                    <button className="btn" type="submit">Create assignment</button>
-                  </div>
-                </form>
-              </div>
-              <div className="list">
-                {state.assignments.map(a => {
-                  const subs = state.submissions.filter(s => s.aid === a.id);
-                  const graded = subs.filter(s => s.grade != null);
-                  return (
-                    <div className="row" key={a.id}>
-                      <div>
-                        <h3>{a.title}</h3>
-                        <div className="meta">{a.course} · Due {fmt(a.due)} · {subs.length} submitted, {graded.length} graded</div>
-                      </div>
-                      <button className="btn ghost" onClick={() => setView({ name: 'detail', id: a.id })}>Review</button>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <>
-              <button className="back" onClick={() => setView({ name: 'list', id: null })}>Back to dashboard</button>
-              <h2>{activeAssignment?.title}</h2>
-              <p className="sub">{activeAssignment?.course} · Due {fmt(activeAssignment?.due)}</p>
-              <div className="panel">
-                {state.submissions.filter(s => s.aid === activeAssignment.id).length === 0 ? (
-                  <div className="empty">No submissions yet.</div>
-                ) : (
-                  state.submissions.filter(s => s.aid === activeAssignment.id).map((s, i) => {
-                    const key = `${s.aid}_${s.student}`;
-                    return (
-                      <div className="sub-item" key={i}>
-                        <strong>{s.student}</strong> <span className="meta">{s.name} ({size(s.size)}) · {fmt(s.at)}</span>
-                        {s.note && <p className="meta">Note: {s.note}</p>}
-                        <div className="grid2">
-                          <div>
-                            <label>Grade (out of {activeAssignment.max})</label>
-                            <input 
-                              type="number" 
-                              min="0" 
-                              max={activeAssignment.max} 
-                              value={grades[key] ?? s.grade ?? ''} 
-                              onChange={e => setGrades({ ...grades, [key]: e.target.value })} 
-                            />
-                          </div>
-                          <div>
-                            <label>Feedback</label>
-                            <input 
-                              type="text" 
-                              value={feedbacks[key] ?? s.feedback ?? ''} 
-                              onChange={e => setFeedbacks({ ...feedbacks, [key]: e.target.value })} 
-                            />
-                          </div>
-                        </div>
-                        <div className="actions">
-                          <button className="btn" onClick={() => handleSaveGrade(s, activeAssignment.max)}>Save grade</button>
-                        </div>
-                      </div>
                     );
-                  })
-                )}
+                  })}
+                </div>
               </div>
-            </>
-          )
+            ) : (
+              /* Step 2: Upload File for Selected Assignment */
+              <div>
+                <button 
+                  className="back" 
+                  onClick={() => setSelectedAssignment(null)}
+                >
+                  ← Back to Assignments List
+                </button>
+
+                <h2>Submit: {selectedAssignment.title}</h2>
+                <p className="sub">Subject: <strong>{selectedAssignment.subject}</strong></p>
+
+                <div className="panel">
+                  <form onSubmit={handleStudentSubmit}>
+                    <label htmlFor="studentName">Your Name</label>
+                    <input
+                      id="studentName"
+                      type="text"
+                      placeholder="e.g. Yashitha"
+                      value={studentName}
+                      onChange={(e) => setStudentName(e.target.value)}
+                      required
+                    />
+
+                    <label>Attach File</label>
+                    <div 
+                      className={`drop ${isDragOver ? 'over' : ''}`}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                      onDragLeave={() => setIsDragOver(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragOver(false);
+                        if (e.dataTransfer.files?.[0]) setSelectedFile(e.dataTransfer.files[0]);
+                      }}
+                      onClick={() => document.getElementById('fileInput').click()}
+                    >
+                      <input
+                        id="fileInput"
+                        type="file"
+                        style={{ display: 'none' }}
+                        onChange={(e) => setSelectedFile(e.target.files[0])}
+                      />
+                      {selectedFile ? (
+                        <div>
+                          <strong>Selected:</strong> {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                        </div>
+                      ) : (
+                        <div>
+                          📁 Drag & drop your assignment file here, or <span style={{ textDecoration: 'underline' }}>browse</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="actions">
+                      <button type="submit" className="btn" disabled={isSubmitting}>
+                        {isSubmitting ? 'Uploading to Supabase...' : 'Submit Work'}
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn ghost" 
+                        onClick={() => setSelectedAssignment(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TEACHER VIEW */}
+        {role === 'teacher' && (
+          <div>
+            <h2>Teacher Dashboard</h2>
+            <p className="sub">Publish assignments by subject and grade student submissions.</p>
+
+            {/* Create Assignment Panel */}
+            <div className="panel">
+              <h3>Create New Assignment</h3>
+              <form onSubmit={handleCreateAssignment}>
+                <div className="grid2">
+                  <div>
+                    <label htmlFor="assTitle">Assignment Title</label>
+                    <input 
+                      id="assTitle" 
+                      type="text" 
+                      placeholder="e.g. Building REST APIs" 
+                      value={newTitle} 
+                      onChange={(e) => setNewTitle(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="assSubject">Subject Category</label>
+                    <select 
+                      id="assSubject" 
+                      value={newSubject} 
+                      onChange={(e) => setNewSubject(e.target.value)}
+                    >
+                      <option value="Web Development">Web Development</option>
+                      <option value="React Programming">React Programming</option>
+                      <option value="Database Systems">Database Systems</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid2" style={{ marginTop: '10px' }}>
+                  <div>
+                    <label htmlFor="assDueDate">Due Date</label>
+                    <input 
+                      id="assDueDate" 
+                      type="date" 
+                      value={newDueDate} 
+                      onChange={(e) => setNewDueDate(e.target.value)} 
+                    />
+                  </div>
+                </div>
+                <div className="actions">
+                  <button type="submit" className="btn">Publish Assignment</button>
+                </div>
+              </form>
+            </div>
+
+            {/* Submissions List from Supabase */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '32px' }}>
+              <h3>Student Submissions</h3>
+              <button className="btn ghost" onClick={fetchSubmissions}>
+                🔄 Refresh Submissions
+              </button>
+            </div>
+
+            {isLoading ? (
+              <div className="empty">Loading submissions...</div>
+            ) : submissions.length === 0 ? (
+              <div className="empty">No submissions found in Supabase.</div>
+            ) : (
+              <div className="list">
+                {submissions.map((item) => (
+                  <div className="row" key={item.id}>
+                    <div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                        <span className="tag t-muted">ID: {item.assignment_id}</span>
+                        <span className={`tag ${item.status === 'Graded' ? 't-ok' : 't-warn'}`}>
+                          {item.status || 'Submitted'} {item.grade ? `(${item.grade})` : ''}
+                        </span>
+                      </div>
+                      <h3>{item.student_name}</h3>
+                      <div className="meta">
+                        Submitted: {new Date(item.created_at).toLocaleString()} • File: <strong>{item.file_name}</strong>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+                      <a href={item.file_url} target="_blank" rel="noopener noreferrer">
+                        <button className="btn ghost">
+                          📥 View File
+                        </button>
+                      </a>
+                      
+                      {/* Quick Grade Selector */}
+                      <select 
+                        style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+                        value={item.grade || 'Pending'}
+                        onChange={(e) => handleGradeSubmission(item.id, e.target.value)}
+                      >
+                        <option value="Pending">Grade: Pending</option>
+                        <option value="A+">Grade: A+</option>
+                        <option value="A">Grade: A</option>
+                        <option value="B">Grade: B</option>
+                        <option value="C">Grade: C</option>
+                        <option value="Needs Revision">Needs Revision</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </main>
-      <div className={`toast ${toastMsg ? 'show' : ''}`} role="status">{toastMsg}</div>
+
+      {/* Floating Toast Notification */}
+      <div className={`toast ${showToast ? 'show' : ''}`}>
+        {toastMessage}
+      </div>
     </div>
   );
 }
+
+export default App;
