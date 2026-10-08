@@ -9,12 +9,8 @@ function App() {
   const subjects = ['All Subjects', 'Web Development', 'React Programming', 'Database Systems'];
   const [selectedSubject, setSelectedSubject] = useState('All Subjects');
 
-  // Initial Assignments List categorized by Subject
-  const [assignments, setAssignments] = useState([
-    { id: 'HW-101', subject: 'Web Development', title: 'HW-101: Web Development Basics', dueDate: '2026-10-15' },
-    { id: 'HW-102', subject: 'React Programming', title: 'HW-102: React Components & Hooks', dueDate: '2026-10-20' },
-    { id: 'HW-103', subject: 'Database Systems', title: 'HW-103: Database Integration', dueDate: '2026-10-25' }
-  ]);
+  // Dynamic Assignments State fetched from Supabase
+  const [assignments, setAssignments] = useState([]);
   
   // Selected assignment for student submission
   const [selectedAssignment, setSelectedAssignment] = useState(null);
@@ -44,13 +40,33 @@ function App() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  // Fetch submissions from Supabase on mount and role switch
+  // Fetch both assignments and submissions from Supabase
   useEffect(() => {
-    fetchSubmissions();
+    fetchData();
   }, [role]);
 
-  const fetchSubmissions = async () => {
+  const fetchData = async () => {
     setIsLoading(true);
+    await Promise.all([fetchAssignments(), fetchSubmissions()]);
+    setIsLoading(false);
+  };
+
+  const fetchAssignments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('assignments')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setAssignments(data || []);
+    } catch (error) {
+      console.error('Error fetching assignments:', error.message);
+      triggerToast('Failed to load assignments from database');
+    }
+  };
+
+  const fetchSubmissions = async () => {
     try {
       const { data, error } = await supabase
         .from('submissions')
@@ -62,13 +78,11 @@ function App() {
     } catch (error) {
       console.error('Error fetching submissions:', error.message);
       triggerToast('Failed to load submissions');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Teacher: Add New Assignment
-  const handleCreateAssignment = (e) => {
+  // Teacher: Save New Assignment to Supabase
+  const handleCreateAssignment = async (e) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
@@ -77,13 +91,23 @@ function App() {
       id: newId,
       subject: newSubject,
       title: `${newId}: ${newTitle}`,
-      dueDate: newDueDate || 'No Due Date'
+      due_date: newDueDate || 'No Due Date'
     };
 
-    setAssignments([...assignments, newAss]);
-    setNewTitle('');
-    setNewDueDate('');
-    triggerToast('New assignment published!');
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .insert([newAss]);
+
+      if (error) throw error;
+
+      triggerToast('New assignment published across all devices!');
+      setNewTitle('');
+      setNewDueDate('');
+      fetchAssignments();
+    } catch (error) {
+      triggerToast('Failed to create assignment: ' + error.message);
+    }
   };
 
   // Student: Submit File to Supabase
@@ -165,19 +189,16 @@ function App() {
     }
   };
 
-  // Helper function to check assignment status for students
   const getSubmissionForAssignment = (assignmentId) => {
     return submissions.find(s => s.assignment_id === assignmentId);
   };
 
-  // Filter assignments by selected subject
   const filteredAssignments = selectedSubject === 'All Subjects'
     ? assignments
     : assignments.filter(a => a.subject === selectedSubject);
 
   return (
     <div>
-      {/* Header with Segmented Switcher */}
       <header>
         <h1>📚 Assignment Portal</h1>
         <div className="seg">
@@ -197,7 +218,6 @@ function App() {
       </header>
 
       <main>
-        {/* Subject Filter Bar */}
         <div className="panel" style={{ padding: '12px 20px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Filter by Subject:</span>
@@ -219,47 +239,52 @@ function App() {
         {role === 'student' && (
           <div>
             {!selectedAssignment ? (
-              /* Step 1: Browse Assignments by Subject with Status Badges */
               <div>
-                <h2>Available Assignments</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2>Available Assignments</h2>
+                  <button className="btn ghost" onClick={fetchData}>🔄 Sync</button>
+                </div>
                 <p className="sub">Track submission status and submit coursework per subject.</p>
                 
-                <div className="list">
-                  {filteredAssignments.map((ass) => {
-                    const submission = getSubmissionForAssignment(ass.id);
-                    return (
-                      <div className="row" key={ass.id}>
-                        <div>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
-                            <span className="tag t-muted">{ass.subject}</span>
-                            {submission ? (
-                              submission.status === 'Graded' ? (
-                                <span className="tag t-ok">Graded: {submission.grade}</span>
+                {filteredAssignments.length === 0 ? (
+                  <div className="empty">No assignments published for this subject yet.</div>
+                ) : (
+                  <div className="list">
+                    {filteredAssignments.map((ass) => {
+                      const submission = getSubmissionForAssignment(ass.id);
+                      return (
+                        <div className="row" key={ass.id}>
+                          <div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                              <span className="tag t-muted">{ass.subject}</span>
+                              {submission ? (
+                                submission.status === 'Graded' ? (
+                                  <span className="tag t-ok">Graded: {submission.grade}</span>
+                                ) : (
+                                  <span className="tag t-warn">Submitted</span>
+                                )
                               ) : (
-                                <span className="tag t-warn">Submitted</span>
-                              )
-                            ) : (
-                              <span className="tag t-bad">Not Submitted</span>
-                            )}
+                                <span className="tag t-bad">Not Submitted</span>
+                              )}
+                            </div>
+                            <h3>{ass.title}</h3>
+                            <div className="meta">Due Date: {ass.due_date || ass.dueDate}</div>
                           </div>
-                          <h3>{ass.title}</h3>
-                          <div className="meta">Due Date: {ass.dueDate}</div>
+                          <div>
+                            <button 
+                              className="btn" 
+                              onClick={() => setSelectedAssignment(ass)}
+                            >
+                              {submission ? 'Re-submit Work ➔' : 'Submit Work ➔'}
+                            </button>
+                          </div>
                         </div>
-                        <div>
-                          <button 
-                            className="btn" 
-                            onClick={() => setSelectedAssignment(ass)}
-                          >
-                            {submission ? 'Re-submit Work ➔' : 'Submit Work ➔'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (
-              /* Step 2: Upload File for Selected Assignment */
               <div>
                 <button 
                   className="back" 
@@ -337,7 +362,6 @@ function App() {
             <h2>Teacher Dashboard</h2>
             <p className="sub">Publish assignments by subject and grade student submissions.</p>
 
-            {/* Create Assignment Panel */}
             <div className="panel">
               <h3>Create New Assignment</h3>
               <form onSubmit={handleCreateAssignment}>
@@ -383,10 +407,9 @@ function App() {
               </form>
             </div>
 
-            {/* Submissions List from Supabase */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '32px' }}>
               <h3>Student Submissions</h3>
-              <button className="btn ghost" onClick={fetchSubmissions}>
+              <button className="btn ghost" onClick={fetchData}>
                 🔄 Refresh Submissions
               </button>
             </div>
@@ -418,7 +441,6 @@ function App() {
                         </button>
                       </a>
                       
-                      {/* Quick Grade Selector */}
                       <select 
                         style={{ padding: '4px 8px', fontSize: '0.85rem' }}
                         value={item.grade || 'Pending'}
@@ -440,7 +462,6 @@ function App() {
         )}
       </main>
 
-      {/* Floating Toast Notification */}
       <div className={`toast ${showToast ? 'show' : ''}`}>
         {toastMessage}
       </div>
