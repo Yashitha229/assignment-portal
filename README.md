@@ -1,16 +1,33 @@
-# React + Vite
+# 📚 Online Assignment Submission System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A responsive React web application built with Vite and deployed on GitHub Pages. It enables students to view and submit assignments, while allowing teachers to create assignments and manage grades.
 
-Currently, two official plugins are available:
+🔗 **Live Demo:** [https://Yashitha229.github.io/assignment-portal/](https://Yashitha229.github.io/assignment-portal/)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## ✨ Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- 🔄 **Dual View Interface:** Toggle seamlessly between Student and Teacher perspectives.
+- 📝 **Teacher Dashboard:** Create new assignments, view submissions, and grade work.
+- 📤 **Student Dashboard:** Track pending assignments and submit work.
+- 💾 **Data Persistence:** Uses browser `localStorage` to save assignments and submissions across sessions.
+- ⚡ **Fast Performance:** Built with Vite and React for instant loading and fast UI interactions.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🛠️ Tech Stack
+
+- **Frontend:** React 19, Vite
+- **Styling:** Custom CSS3
+- **Storage:** Web Storage API (`localStorage`)
+- **Deployment:** GitHub Pages (`gh-pages`)
+
+---
+
+## 🚀 Running Locally
+
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/Yashitha229/assignment-portal.git](https://github.com/Yashitha229/assignment-portal.git)
+   cd assignment-portal
