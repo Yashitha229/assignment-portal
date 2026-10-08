@@ -20,8 +20,8 @@ function App() {
   const [newSubject, setNewSubject] = useState('Web Development');
   const [newDueDate, setNewDueDate] = useState('');
 
-  // Student Form State
-  const [studentName, setStudentName] = useState('');
+  // Student Form State (Persisted in localStorage so each student sees their own status)
+  const [studentName, setStudentName] = useState(() => localStorage.getItem('portal_student_name') || '');
   const [selectedFile, setSelectedFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -38,6 +38,12 @@ function App() {
     setToastMessage(msg);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
+  };
+
+  // Save student name locally when changed
+  const handleStudentNameChange = (name) => {
+    setStudentName(name);
+    localStorage.setItem('portal_student_name', name);
   };
 
   // Fetch both assignments and submissions from Supabase
@@ -62,7 +68,7 @@ function App() {
       setAssignments(data || []);
     } catch (error) {
       console.error('Error fetching assignments:', error.message);
-      triggerToast('Failed to load assignments from database');
+      triggerToast('Failed to load assignments');
     }
   };
 
@@ -147,7 +153,7 @@ function App() {
         .from('submissions')
         .insert([
           {
-            student_name: studentName,
+            student_name: studentName.trim(),
             assignment_id: selectedAssignment.id,
             file_url: urlData.publicUrl,
             file_name: selectedFile.name,
@@ -160,7 +166,6 @@ function App() {
 
       triggerToast('Assignment submitted successfully!');
       
-      setStudentName('');
       setSelectedFile(null);
       setSelectedAssignment(null);
       fetchSubmissions();
@@ -189,8 +194,17 @@ function App() {
     }
   };
 
+  // Helper function to check status SPECIFIC to the current student name
   const getSubmissionForAssignment = (assignmentId) => {
-    return submissions.find(s => s.assignment_id === assignmentId);
+    if (!studentName.trim()) {
+      // If no student name is typed yet, fallback to latest overall submission for preview
+      return submissions.find(s => s.assignment_id === assignmentId);
+    }
+    // Match both assignment_id AND student_name
+    return submissions.find(
+      s => s.assignment_id === assignmentId && 
+           s.student_name.toLowerCase().trim() === studentName.toLowerCase().trim()
+    );
   };
 
   const filteredAssignments = selectedSubject === 'All Subjects'
@@ -218,6 +232,7 @@ function App() {
       </header>
 
       <main>
+        {/* Subject Filter Bar */}
         <div className="panel" style={{ padding: '12px 20px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Filter by Subject:</span>
@@ -238,6 +253,21 @@ function App() {
         {/* STUDENT VIEW */}
         {role === 'student' && (
           <div>
+            {/* Student Name Identifer Bar */}
+            <div className="panel" style={{ marginBottom: '20px', background: 'var(--surface)' }}>
+              <label htmlFor="studentIdent">Your Name / Student ID:</label>
+              <input
+                id="studentIdent"
+                type="text"
+                placeholder="Enter your name to track your submissions (e.g. Yashitha)"
+                value={studentName}
+                onChange={(e) => handleStudentNameChange(e.target.value)}
+              />
+              <small style={{ color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
+                Type your name above so the status badges match your personal submissions.
+              </small>
+            </div>
+
             {!selectedAssignment ? (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -298,13 +328,13 @@ function App() {
 
                 <div className="panel">
                   <form onSubmit={handleStudentSubmit}>
-                    <label htmlFor="studentName">Your Name</label>
+                    <label htmlFor="studentNameInput">Your Name</label>
                     <input
-                      id="studentName"
+                      id="studentNameInput"
                       type="text"
                       placeholder="e.g. Yashitha"
                       value={studentName}
-                      onChange={(e) => setStudentName(e.target.value)}
+                      onChange={(e) => handleStudentNameChange(e.target.value)}
                       required
                     />
 
